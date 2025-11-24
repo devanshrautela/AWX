@@ -1,7 +1,7 @@
 ---
 - name: Check Resource Usage
   hosts: all
-  become: yes  # Run as root to see all processes
+  become: yes
   tasks:
     - name: Get Top 5 CPU Consuming Processes
       shell: "ps aux --sort=-%cpu | head -n 6"
@@ -18,3 +18,13 @@
     - name: Display Memory Usage
       debug:
         msg: "{{ top_mem.stdout_lines }}"
+
+    - name: Save results to text file
+      copy:
+        dest: "/tmp/resource_usage_report.txt"
+        content: |
+          ===== CPU Usage (Top 5 Processes) =====
+          {{ top_cpu.stdout }}
+
+          ===== Memory Usage (Top 5 Processes) =====
+          {{ top_mem.stdout }}
