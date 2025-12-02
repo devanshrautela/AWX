@@ -1,16 +1,17 @@
 ---
-- name: Start Apache on AWS Linux
-  hosts: all
-  become: yes          # <- IMPORTANT for Amazon Linux (ec2-user needs sudo)
-  become_method: sudo  # optional, but explicit
+- name: Install and start Apache on AWS Linux slave
+  hosts: aws_slave   # or "all" if you prefer
+  become: yes
+  become_method: sudo
+
   tasks:
-    - name: Install httpd package (if not installed)
-      yum:
+    - name: Install Apache (httpd)
+      package:
         name: httpd
         state: present
 
-    - name: Ensure httpd service is running and enabled
+    - name: Ensure Apache is started and enabled on boot
       service:
         name: httpd
         state: started
-        enabled: yes
+        enabled: true
