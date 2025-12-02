@@ -1,7 +1,8 @@
 ---
 - name: Start Apache on AWS Linux
   hosts: all
-  become: yes
+  become: yes          # <- IMPORTANT for Amazon Linux (ec2-user needs sudo)
+  become_method: sudo  # optional, but explicit
   tasks:
     - name: Install httpd package (if not installed)
       yum:
