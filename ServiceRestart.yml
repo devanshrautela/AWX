@@ -1,6 +1,6 @@
 ---
 - name: Install and manage Apache on Linux
-  hosts: all
+  hosts: Web
   become: yes
 
   vars:
