@@ -1,32 +1,30 @@
 ---
-- name: Install and manage Apache on Linux
+- name: Start and verify Apache on AWS Linux
   hosts: all
   become: yes
 
-  vars:
-    apache_pkg: >-
-      {{ 'httpd' if ansible_facts.os_family in ['RedHat', 'Amazon']
-         else 'apache2' }}
-    apache_service: "{{ apache_pkg }}"
-
   tasks:
-    - name: Install Apache
+    - name: Install Apache (httpd)
       package:
-        name: "{{ apache_pkg }}"
+        name: httpd
         state: present
 
     - name: Ensure Apache is started and enabled on boot
       service:
-        name: "{{ apache_service }}"
+        name: httpd
         state: started
         enabled: true
+      register: apache_service
 
-    - name: Restart Apache
-      service:
-        name: "{{ apache_service }}"
-        state: restarted
-      register: restart_result
-
-    - name: Show restart result
+    - name: Show result of service start
       debug:
-        var: restart_result
+        var: apache_service
+
+    - name: Check status via systemctl
+      shell: systemctl is-active httpd
+      register: httpd_status
+      changed_when: false
+
+    - name: Show systemctl status (is-active)
+      debug:
+        var: httpd_status.stdout
