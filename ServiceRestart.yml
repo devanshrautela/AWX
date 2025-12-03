@@ -1,16 +1,10 @@
 ---
-- name: Install and start Apache on AWS Linux slave
+- name: Restart Apache on AWS Linux slave
   hosts: all
   become: yes
 
   tasks:
-    - name: Install Apache (httpd)
-      package:
-        name: httpd
-        state: present
-
-    - name: Ensure Apache is started and enabled on boot
+    - name: Restart Apache (httpd)
       service:
         name: httpd
-        state: started
-        enabled: true
+        state: restarted
