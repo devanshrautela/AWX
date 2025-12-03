@@ -1,6 +1,6 @@
 ---
 - name: Install and start Apache on AWS Linux slave
-  hosts: "Web Servers"   # or "all" if you prefer
+  hosts: "Web Servers,"   # or "all" if you prefer
   become: yes
   become_method: sudo
 
