@@ -1,10 +1,32 @@
 ---
-- name: Restart Apache on AWS Linux slave
+- name: Install and manage Apache on Linux
   hosts: all
   become: yes
 
+  vars:
+    apache_pkg: >-
+      {{ 'httpd' if ansible_facts.os_family in ['RedHat', 'Amazon']
+         else 'apache2' }}
+    apache_service: "{{ apache_pkg }}"
+
   tasks:
-    - name: Restart Apache (httpd)
+    - name: Install Apache
+      package:
+        name: "{{ apache_pkg }}"
+        state: present
+
+    - name: Ensure Apache is started and enabled on boot
       service:
-        name: httpd
+        name: "{{ apache_service }}"
+        state: started
+        enabled: true
+
+    - name: Restart Apache
+      service:
+        name: "{{ apache_service }}"
         state: restarted
+      register: restart_result
+
+    - name: Show restart result
+      debug:
+        var: restart_result
