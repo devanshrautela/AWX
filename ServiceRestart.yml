@@ -1,35 +1,11 @@
 ---
-- name: Install and manage Apache on Linux
-  hosts: Web
-  become: yes
-
-  vars:
-    apache_pkg: >-
-      {{ 'httpd' 
-         if ansible_facts.pkg_mgr in ['yum', 'dnf'] 
-         else 'apache2' }}
-    apache_service: >-
-      {{ 'httpd' 
-         if ansible_facts.os_family in ['RedHat', 'Amazon'] 
-         else 'apache2' }}
+- name: Start Apache HTTPD Service
+  hosts: all
+  become: yes  # This tells Ansible to use 'sudo' automatically
 
   tasks:
-    - name: Show detected OS and package manager
-      debug:
-        msg: "OS family={{ ansible_facts.os_family }}, pkg_mgr={{ ansible_facts.pkg_mgr }}"
-
-    - name: Install Apache
-      package:
-        name: "{{ apache_pkg }}"
-        state: present
-
-    - name: Ensure Apache is started and enabled on boot
+    - name: Ensure httpd is started and enabled
       service:
-        name: "{{ apache_service }}"
+        name: httpd
         state: started
-        enabled: true
-
-    - name: Restart Apache
-      service:
-        name: "{{ apache_service }}"
-        state: restarted
+        enabled: yes
