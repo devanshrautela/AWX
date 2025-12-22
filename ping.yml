@@ -2,15 +2,14 @@
 - name: Connectivity Validation
   hosts: all
   gather_facts: no
-  # We assume 'become: yes' is enabled globally or in the Job Template,
-  # so we must disable it for the local ping task.
-
+  # Ensure 'become: yes' is disabled for the local task below
+  
   tasks:
     # 1. Network Ping (Runs on AWX, targets Server)
     - name: Network Reachability Check
       ansible.builtin.command: "ping -c 2 {{ inventory_hostname }}"
       delegate_to: localhost
-      become: false  # <--- FIX: Do not use sudo inside AWX container
+      become: false
       register: net_ping
       ignore_errors: yes
       changed_when: false
@@ -21,9 +20,14 @@
       register: ssh_ping
       ignore_errors: yes
 
-    # 3. Final Simple Output
+    # 3. Final Output (Logic: If SSH works OR Ping works -> Success)
     - name: Validation Result
       ansible.builtin.debug:
         msg: >-
-          STATUS: {{ 'SUCCESS' if (net_ping.rc == 0 and ssh_ping.ping is defined) else 'FAILED' }} 
-          [Network: {{ 'OK' if net_ping.rc == 0 else 'DOWN' }} | SSH: {{ 'OK' if ssh_ping.ping is defined else 'DOWN' }}]
+          {% if ssh_ping.ping is defined %}
+          SUCCESS: Network connectivity is possible. (SSH Verified. Ping status ignored/blocked).
+          {% elif net_ping.rc == 0 %}
+          WARNING: Network connectivity is possible (Ping OK), but SSH failed.
+          {% else %}
+          FAILED: Server is unreachable via both Network and SSH.
+          {% endif %}
