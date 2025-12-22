@@ -1,51 +1,64 @@
 ---
-- name: Cleanup Temporary Files
+- name: Ubuntu System Cleanup
   hosts: all
   become: yes
   vars:
-    # Configuration: How old should files be before deletion?
-    # 86400 seconds = 1 day
-    file_age: "86400" 
+    # Safety: Only delete files older than 1 day (86400 seconds)
+    file_age_seconds: "86400"
     
-    # Paths to clean
+    # Toggle specific cleanup tasks
+    clean_temp_dirs: true
+    clean_apt_cache: true
+    clean_journal_logs: true
+    
+    # Paths to scan for temp files
     temp_paths:
       - /tmp
       - /var/tmp
 
   tasks:
-    - name: Find temporary files older than {{ file_age }} seconds
+    # ---------------------------------------------------------
+    # 1. Clear Standard Temporary Directories
+    # ---------------------------------------------------------
+    - name: Find temporary files older than {{ file_age_seconds }} seconds
       ansible.builtin.find:
         paths: "{{ item }}"
-        age: "{{ file_age }}"
+        age: "{{ file_age_seconds }}"
         age_stamp: mtime
         recurse: yes
         file_type: file
       loop: "{{ temp_paths }}"
       register: files_to_delete
+      when: clean_temp_dirs
+      tags: [ 'temp' ]
 
-    - name: Remove the found files
+    - name: Remove found temporary files
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: absent
       loop: "{{ files_to_delete.results | map(attribute='files') | list | flatten }}"
       loop_control:
         label: "{{ item.path }}"
+      when: clean_temp_dirs
+      tags: [ 'temp' ]
 
-    - name: Find empty directories in temp paths (Optional)
-      ansible.builtin.find:
-        paths: "{{ item }}"
-        age: "{{ file_age }}"
-        recurse: yes
-        file_type: directory
-      loop: "{{ temp_paths }}"
-      register: dirs_to_delete
+    # ---------------------------------------------------------
+    # 2. Clear APT Cache (Specific to Ubuntu/Debian)
+    # ---------------------------------------------------------
+    - name: Clean APT cache (frees /var/cache/apt/archives)
+      ansible.builtin.apt:
+        autoclean: yes
+        autoremove: yes
+      when: clean_apt_cache
+      tags: [ 'apt' ]
 
-    - name: Remove empty directories
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: absent
-      # Only delete if the directory is empty
-      when: item.matched == 0 
-      loop: "{{ dirs_to_delete.results | map(attribute='files') | list | flatten }}"
-      loop_control:
-        label: "{{ item.path }}"
+    # ---------------------------------------------------------
+    # 3. Vacuum Systemd Journals (Log cleanup)
+    # ---------------------------------------------------------
+    - name: Vacuum systemd journals older than 2 days
+      ansible.builtin.command:
+        cmd: journalctl --vacuum-time=2d
+      register: journal_out
+      changed_when: "'0B' not in journal_out.stderr"
+      when: clean_journal_logs
+      tags: [ 'logs' ]
