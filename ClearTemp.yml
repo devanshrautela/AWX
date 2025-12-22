@@ -3,23 +3,16 @@
   hosts: all
   become: yes
   vars:
-    # Safety: Only delete files older than 1 day (86400 seconds)
     file_age_seconds: "86400"
-
-    # Toggle specific cleanup tasks
     clean_temp_dirs: true
     clean_yum_cache: true
     clean_journal_logs: true
-
-    # Paths to scan for temp files
     temp_paths:
       - /tmp
       - /var/tmp
 
   tasks:
-    # ---------------------------------------------------------
     # 1. Clear Standard Temporary Directories
-    # ---------------------------------------------------------
     - name: Find temporary files older than {{ file_age_seconds }} seconds
       ansible.builtin.find:
         paths: "{{ item }}"
@@ -41,20 +34,15 @@
       when: clean_temp_dirs
       tags: ['temp']
 
-    # ---------------------------------------------------------
-    # 2. Clear YUM/DNF Cache (Specific to AWS Linux/RHEL)
-    # ---------------------------------------------------------
+    # 2. Clean YUM Cache (FIXED TASK)
     - name: Clean Yum cache (frees /var/cache/yum)
       ansible.builtin.command:
         cmd: yum clean all
-      args:
-        warn: false
+      # 'args: warn: false' REMOVED here
       when: clean_yum_cache
       tags: ['yum']
 
-    # ---------------------------------------------------------
-    # 3. Vacuum Systemd Journals (Log cleanup)
-    # ---------------------------------------------------------
+    # 3. Vacuum Systemd Journals
     - name: Vacuum systemd journals older than 2 days
       ansible.builtin.command:
         cmd: journalctl --vacuum-time=2d
