@@ -1,0 +1,22 @@
+---
+- name: Reset Network Interface (Safe Mode)
+  hosts: all
+  become: yes
+  tasks:
+    - name: Restart Network Service (Async to prevent disconnect hang)
+      ansible.builtin.service:
+        name: network
+        state: restarted
+      # Fire and forget: Don't wait for the result immediately
+      # This prevents Ansible from crashing if the connection drops for 1 second
+      async: 45
+      poll: 0
+      register: net_restart
+
+    - name: Wait for server to come back online
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 60
+
+    - name: Verify Connectivity
+      ansible.builtin.ping:
