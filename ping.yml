@@ -1,0 +1,42 @@
+---
+- name: Server Connectivity Validation
+  hosts: all
+  gather_facts: no  # Skip fact gathering to make the check faster
+  
+  tasks:
+    # ---------------------------------------------------------
+    # 1. ICMP Ping (Network Level)
+    # Checks if the server is reachable on the network
+    # ---------------------------------------------------------
+    - name: Check network reachability (ICMP Ping)
+      ansible.builtin.command: "ping -c 3 {{ inventory_hostname }}"
+      delegate_to: localhost
+      register: icmp_result
+      ignore_errors: yes  # Don't stop the playbook if this fails
+      changed_when: false
+
+    - name: Report Network Status
+      ansible.builtin.debug:
+        msg: "Network Ping: {{ 'SUCCESS' if icmp_result.rc == 0 else 'FAILED' }}"
+
+    # ---------------------------------------------------------
+    # 2. Ansible Ping (Application Level)
+    # Checks if SSH credentials work and Python is installed
+    # ---------------------------------------------------------
+    - name: Check SSH & Ansible connectivity
+      ansible.builtin.ping:
+      register: ansible_ping_result
+      ignore_errors: yes
+
+    - name: Report SSH/Ansible Status
+      ansible.builtin.debug:
+        msg: "SSH Access: {{ 'SUCCESS' if ansible_ping_result.ping is defined else 'FAILED' }}"
+
+    # ---------------------------------------------------------
+    # 3. Final Summary Failure (Optional)
+    # Fails the job explicitly if SSH is down
+    # ---------------------------------------------------------
+    - name: Fail job if SSH is down
+      ansible.builtin.fail:
+        msg: "Critical: Unable to connect to server via SSH."
+      when: ansible_ping_result.failed is defined and ansible_ping_result.failed
