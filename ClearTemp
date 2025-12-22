@@ -1,0 +1,51 @@
+---
+- name: Cleanup Temporary Files
+  hosts: all
+  become: yes
+  vars:
+    # Configuration: How old should files be before deletion?
+    # 86400 seconds = 1 day
+    file_age: "86400" 
+    
+    # Paths to clean
+    temp_paths:
+      - /tmp
+      - /var/tmp
+
+  tasks:
+    - name: Find temporary files older than {{ file_age }} seconds
+      ansible.builtin.find:
+        paths: "{{ item }}"
+        age: "{{ file_age }}"
+        age_stamp: mtime
+        recurse: yes
+        file_type: file
+      loop: "{{ temp_paths }}"
+      register: files_to_delete
+
+    - name: Remove the found files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ files_to_delete.results | map(attribute='files') | list | flatten }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Find empty directories in temp paths (Optional)
+      ansible.builtin.find:
+        paths: "{{ item }}"
+        age: "{{ file_age }}"
+        recurse: yes
+        file_type: directory
+      loop: "{{ temp_paths }}"
+      register: dirs_to_delete
+
+    - name: Remove empty directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      # Only delete if the directory is empty
+      when: item.matched == 0 
+      loop: "{{ dirs_to_delete.results | map(attribute='files') | list | flatten }}"
+      loop_control:
+        label: "{{ item.path }}"
