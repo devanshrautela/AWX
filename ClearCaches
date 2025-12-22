@@ -1,0 +1,30 @@
+---
+- name: Clear System Caches (RAM & Disk)
+  hosts: all
+  become: yes
+  tasks:
+
+    # ---------------------------------------------------------
+    # 1. Clear Package Manager Disk Cache (Yum)
+    # ---------------------------------------------------------
+    - name: Clean Yum metadata and package cache
+      ansible.builtin.command:
+        cmd: yum clean all
+      # Note: We removed 'args: warn: false' to fix the error you saw earlier
+      register: yum_output
+      changed_when: "'0 package files removed' not in yum_output.stdout"
+
+    # ---------------------------------------------------------
+    # 2. Sync Filesystem to Disk (Safety Step)
+    # ---------------------------------------------------------
+    - name: Sync filesystem buffers before dropping cache
+      ansible.builtin.command: sync
+
+    # ---------------------------------------------------------
+    # 3. Clear RAM Cache (PageCache, dentries, and inodes)
+    # ---------------------------------------------------------
+    - name: Drop RAM Caches (Free up Memory)
+      ansible.builtin.shell: echo 3 > /proc/sys/vm/drop_caches
+      args:
+        # Use shell executable to ensure redirection (>) works
+        executable: /bin/bash
