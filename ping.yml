@@ -1,42 +1,29 @@
 ---
-- name: Server Connectivity Validation
+- name: Connectivity Validation
   hosts: all
-  gather_facts: no  # Skip fact gathering to make the check faster
-  
+  gather_facts: no
+  # We assume 'become: yes' is enabled globally or in the Job Template,
+  # so we must disable it for the local ping task.
+
   tasks:
-    # ---------------------------------------------------------
-    # 1. ICMP Ping (Network Level)
-    # Checks if the server is reachable on the network
-    # ---------------------------------------------------------
-    - name: Check network reachability (ICMP Ping)
-      ansible.builtin.command: "ping -c 3 {{ inventory_hostname }}"
+    # 1. Network Ping (Runs on AWX, targets Server)
+    - name: Network Reachability Check
+      ansible.builtin.command: "ping -c 2 {{ inventory_hostname }}"
       delegate_to: localhost
-      register: icmp_result
-      ignore_errors: yes  # Don't stop the playbook if this fails
+      become: false  # <--- FIX: Do not use sudo inside AWX container
+      register: net_ping
+      ignore_errors: yes
       changed_when: false
 
-    - name: Report Network Status
-      ansible.builtin.debug:
-        msg: "Network Ping: {{ 'SUCCESS' if icmp_result.rc == 0 else 'FAILED' }}"
-
-    # ---------------------------------------------------------
-    # 2. Ansible Ping (Application Level)
-    # Checks if SSH credentials work and Python is installed
-    # ---------------------------------------------------------
-    - name: Check SSH & Ansible connectivity
+    # 2. SSH Ping (Runs on Server)
+    - name: SSH Connectivity Check
       ansible.builtin.ping:
-      register: ansible_ping_result
+      register: ssh_ping
       ignore_errors: yes
 
-    - name: Report SSH/Ansible Status
+    # 3. Final Simple Output
+    - name: Validation Result
       ansible.builtin.debug:
-        msg: "SSH Access: {{ 'SUCCESS' if ansible_ping_result.ping is defined else 'FAILED' }}"
-
-    # ---------------------------------------------------------
-    # 3. Final Summary Failure (Optional)
-    # Fails the job explicitly if SSH is down
-    # ---------------------------------------------------------
-    - name: Fail job if SSH is down
-      ansible.builtin.fail:
-        msg: "Critical: Unable to connect to server via SSH."
-      when: ansible_ping_result.failed is defined and ansible_ping_result.failed
+        msg: >-
+          STATUS: {{ 'SUCCESS' if (net_ping.rc == 0 and ssh_ping.ping is defined) else 'FAILED' }} 
+          [Network: {{ 'OK' if net_ping.rc == 0 else 'DOWN' }} | SSH: {{ 'OK' if ssh_ping.ping is defined else 'DOWN' }}]
