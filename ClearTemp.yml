@@ -1,16 +1,16 @@
 ---
-- name: Ubuntu System Cleanup
+- name: AWS Linux System Cleanup
   hosts: all
   become: yes
   vars:
     # Safety: Only delete files older than 1 day (86400 seconds)
     file_age_seconds: "86400"
-    
+
     # Toggle specific cleanup tasks
     clean_temp_dirs: true
-    clean_apt_cache: true
+    clean_yum_cache: true
     clean_journal_logs: true
-    
+
     # Paths to scan for temp files
     temp_paths:
       - /tmp
@@ -24,13 +24,12 @@
       ansible.builtin.find:
         paths: "{{ item }}"
         age: "{{ file_age_seconds }}"
-        age_stamp: mtime
         recurse: yes
         file_type: file
       loop: "{{ temp_paths }}"
       register: files_to_delete
       when: clean_temp_dirs
-      tags: [ 'temp' ]
+      tags: ['temp']
 
     - name: Remove found temporary files
       ansible.builtin.file:
@@ -40,17 +39,18 @@
       loop_control:
         label: "{{ item.path }}"
       when: clean_temp_dirs
-      tags: [ 'temp' ]
+      tags: ['temp']
 
     # ---------------------------------------------------------
-    # 2. Clear APT Cache (Specific to Ubuntu/Debian)
+    # 2. Clear YUM/DNF Cache (Specific to AWS Linux/RHEL)
     # ---------------------------------------------------------
-    - name: Clean APT cache (frees /var/cache/apt/archives)
-      ansible.builtin.apt:
-        autoclean: yes
-        autoremove: yes
-      when: clean_apt_cache
-      tags: [ 'apt' ]
+    - name: Clean Yum cache (frees /var/cache/yum)
+      ansible.builtin.command:
+        cmd: yum clean all
+      args:
+        warn: false
+      when: clean_yum_cache
+      tags: ['yum']
 
     # ---------------------------------------------------------
     # 3. Vacuum Systemd Journals (Log cleanup)
@@ -61,4 +61,4 @@
       register: journal_out
       changed_when: "'0B' not in journal_out.stderr"
       when: clean_journal_logs
-      tags: [ 'logs' ]
+      tags: ['logs']
