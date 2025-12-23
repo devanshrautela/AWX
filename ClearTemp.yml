@@ -12,7 +12,9 @@
       - /var/tmp
 
   tasks:
-    # 1. Clear Standard Temporary Directories
+    # ---------------------------------------------------------
+    # 1. Handle Temporary Files
+    # ---------------------------------------------------------
     - name: Find temporary files older than {{ file_age_seconds }} seconds
       ansible.builtin.find:
         paths: "{{ item }}"
@@ -21,6 +23,12 @@
         file_type: file
       loop: "{{ temp_paths }}"
       register: files_to_delete
+      when: clean_temp_dirs
+      tags: ['temp']
+
+    - name: Calculate size of temp files to be deleted
+      ansible.builtin.set_fact:
+        temp_size_bytes: "{{ files_to_delete.results | map(attribute='files') | flatten | map(attribute='size') | sum | default(0) }}"
       when: clean_temp_dirs
       tags: ['temp']
 
@@ -34,15 +42,26 @@
       when: clean_temp_dirs
       tags: ['temp']
 
-    # 2. Clean YUM Cache (FIXED TASK)
-    - name: Clean Yum cache (frees /var/cache/yum)
-      ansible.builtin.command:
-        cmd: yum clean all
-      # 'args: warn: false' REMOVED here
+    # ---------------------------------------------------------
+    # 2. Handle YUM Cache
+    # ---------------------------------------------------------
+    - name: Measure Yum cache size before cleaning
+      ansible.builtin.command: du -sh /var/cache/yum
+      register: yum_cache_size
+      changed_when: false
+      ignore_errors: true
       when: clean_yum_cache
       tags: ['yum']
 
-    # 3. Vacuum Systemd Journals
+    - name: Clean Yum cache
+      ansible.builtin.command:
+        cmd: yum clean all
+      when: clean_yum_cache
+      tags: ['yum']
+
+    # ---------------------------------------------------------
+    # 3. Handle Systemd Journals
+    # ---------------------------------------------------------
     - name: Vacuum systemd journals older than 2 days
       ansible.builtin.command:
         cmd: journalctl --vacuum-time=2d
@@ -50,3 +69,17 @@
       changed_when: "'0B' not in journal_out.stderr"
       when: clean_journal_logs
       tags: ['logs']
+
+    # ---------------------------------------------------------
+    # 4. Final Reporting
+    # ---------------------------------------------------------
+    - name: Display Cleanup Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================================="
+          - "   SUCCESSFULLY CLEARED THE DUMP"
+          - "======================================================="
+          - "Temp Files Removed:  {{ (temp_size_bytes | int / 1024 / 1024) | round(2) }} MB"
+          - "Yum Cache Freed:     {{ yum_cache_size.stdout | default('Unknown') | split('\t') | first }}"
+          - "Journal Logs Freed:  {{ journal_out.stderr | regex_search('freed (.*?) of', '\\1') | first | default('0B') }}"
+          - "======================================================="
