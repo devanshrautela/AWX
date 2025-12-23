@@ -5,26 +5,54 @@
   tasks:
 
     # ---------------------------------------------------------
-    # 1. Clear Package Manager Disk Cache (Yum)
+    # 1. PRE-CHECKS (Measure sizes before cleaning)
+    # ---------------------------------------------------------
+    - name: Measure Yum cache size before cleaning
+      ansible.builtin.shell: du -sh /var/cache/yum | cut -f1
+      register: yum_cache_size_before
+      changed_when: false
+      ignore_errors: true
+
+    - name: Get current free memory (MB) before clearing
+      ansible.builtin.shell: free -m | awk '/^Mem:/{print $4}'
+      register: mem_free_before
+      changed_when: false
+
+    # ---------------------------------------------------------
+    # 2. CLEAR DISK CACHE (Yum)
     # ---------------------------------------------------------
     - name: Clean Yum metadata and package cache
       ansible.builtin.command:
         cmd: yum clean all
-      # Note: We removed 'args: warn: false' to fix the error you saw earlier
       register: yum_output
       changed_when: "'0 package files removed' not in yum_output.stdout"
 
     # ---------------------------------------------------------
-    # 2. Sync Filesystem to Disk (Safety Step)
+    # 3. CLEAR RAM CACHE (PageCache, dentries, and inodes)
     # ---------------------------------------------------------
     - name: Sync filesystem buffers before dropping cache
       ansible.builtin.command: sync
 
-    # ---------------------------------------------------------
-    # 3. Clear RAM Cache (PageCache, dentries, and inodes)
-    # ---------------------------------------------------------
     - name: Drop RAM Caches (Free up Memory)
       ansible.builtin.shell: echo 3 > /proc/sys/vm/drop_caches
       args:
-        # Use shell executable to ensure redirection (>) works
         executable: /bin/bash
+      
+    # ---------------------------------------------------------
+    # 4. POST-CHECKS & REPORTING
+    # ---------------------------------------------------------
+    - name: Get free memory (MB) after clearing
+      ansible.builtin.shell: free -m | awk '/^Mem:/{print $4}'
+      register: mem_free_after
+      changed_when: false
+
+    - name: Display Cleanup Summary
+      ansible.builtin.debug:
+        msg:
+          - "======================================================="
+          - "   SUCCESSFULLY CLEARED SYSTEM CACHES"
+          - "======================================================="
+          - "Disk Space Freed (Yum): {{ yum_cache_size_before.stdout | default('0B') }}"
+          - "RAM Freed (Est):        {{ (mem_free_after.stdout | int) - (mem_free_before.stdout | int) }} MB"
+          - "Current Free RAM:       {{ mem_free_after.stdout }} MB"
+          - "======================================================="
