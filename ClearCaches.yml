@@ -1,58 +1,87 @@
 ---
-- name: Clear System Caches (RAM & Disk)
+- name: AWS Linux System Cleanup
   hosts: all
   become: yes
+  vars:
+    file_age_seconds: "86400"
+    clean_temp_dirs: true
+    clean_yum_cache: true
+    clean_journal_logs: true
+    temp_paths:
+      - /tmp
+      - /var/tmp
+
   tasks:
+    # ---------------------------------------------------------
+    # 1. Handle Temporary Files
+    # ---------------------------------------------------------
+    - name: Find temporary files older than {{ file_age_seconds }} seconds
+      ansible.builtin.find:
+        paths: "{{ item }}"
+        age: "{{ file_age_seconds }}"
+        recurse: yes
+        file_type: file
+      loop: "{{ temp_paths }}"
+      register: files_to_delete
+      when: clean_temp_dirs
+      tags: ['temp']
+
+    - name: Calculate size of temp files to be deleted
+      ansible.builtin.set_fact:
+        temp_size_bytes: "{{ files_to_delete.results | map(attribute='files') | flatten | map(attribute='size') | sum | default(0) }}"
+      when: clean_temp_dirs
+      tags: ['temp']
+
+    - name: Remove found temporary files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ files_to_delete.results | map(attribute='files') | list | flatten }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: clean_temp_dirs
+      tags: ['temp']
 
     # ---------------------------------------------------------
-    # 1. PRE-CHECKS (Measure sizes before cleaning)
+    # 2. Handle Package Manager (Yum/DNF) Cache
     # ---------------------------------------------------------
-    - name: Measure Yum cache size before cleaning
-      ansible.builtin.shell: du -sh /var/cache/yum | cut -f1
-      register: yum_cache_size_before
+    - name: Measure Package Cache (Yum/DNF) size before cleaning
+      # 'du -shc' sums up the sizes. 2>/dev/null hides errors if one path is missing.
+      ansible.builtin.shell: "du -shc /var/cache/yum /var/cache/dnf 2>/dev/null | grep total | awk '{print $1}'"
+      register: pkg_cache_size
       changed_when: false
-      ignore_errors: true
+      failed_when: false # Don't fail if both are missing (rare, but possible)
+      when: clean_yum_cache
+      tags: ['yum']
 
-    - name: Get current free memory (MB) before clearing
-      ansible.builtin.shell: free -m | awk '/^Mem:/{print $4}'
-      register: mem_free_before
-      changed_when: false
-
-    # ---------------------------------------------------------
-    # 2. CLEAR DISK CACHE (Yum)
-    # ---------------------------------------------------------
-    - name: Clean Yum metadata and package cache
+    - name: Clean Package Manager cache
       ansible.builtin.command:
         cmd: yum clean all
-      register: yum_output
-      changed_when: "'0 package files removed' not in yum_output.stdout"
+      when: clean_yum_cache
+      tags: ['yum']
 
     # ---------------------------------------------------------
-    # 3. CLEAR RAM CACHE (PageCache, dentries, and inodes)
+    # 3. Handle Systemd Journals
     # ---------------------------------------------------------
-    - name: Sync filesystem buffers before dropping cache
-      ansible.builtin.command: sync
+    - name: Vacuum systemd journals older than 2 days
+      ansible.builtin.command:
+        cmd: journalctl --vacuum-time=2d
+      register: journal_out
+      changed_when: "'0B' not in journal_out.stderr"
+      when: clean_journal_logs
+      tags: ['logs']
 
-    - name: Drop RAM Caches (Free up Memory)
-      ansible.builtin.shell: echo 3 > /proc/sys/vm/drop_caches
-      args:
-        executable: /bin/bash
-      
     # ---------------------------------------------------------
-    # 4. POST-CHECKS & REPORTING
+    # 4. Final Reporting
     # ---------------------------------------------------------
-    - name: Get free memory (MB) after clearing
-      ansible.builtin.shell: free -m | awk '/^Mem:/{print $4}'
-      register: mem_free_after
-      changed_when: false
-
     - name: Display Cleanup Summary
       ansible.builtin.debug:
         msg:
           - "======================================================="
-          - "   SUCCESSFULLY CLEARED SYSTEM CACHES"
+          - "   SUCCESSFULLY CLEARED THE DUMP"
           - "======================================================="
-          - "Disk Space Freed (Yum): {{ yum_cache_size_before.stdout | default('0B') }}"
-          - "RAM Freed (Est):        {{ (mem_free_after.stdout | int) - (mem_free_before.stdout | int) }} MB"
-          - "Current Free RAM:       {{ mem_free_after.stdout }} MB"
+          - "Temp Files Removed:  {{ (temp_size_bytes | int / 1024 / 1024) | round(2) }} MB"
+          # We use 'default' here to ensure it prints 0B if the previous command returned nothing
+          - "Pkg Cache Freed:     {{ pkg_cache_size.stdout | default('0B', true) }}"
+          - "Journal Logs Freed:  {{ journal_out.stderr | regex_search('freed (.*?) of', '\\1') | first | default('0B') }}"
           - "======================================================="
