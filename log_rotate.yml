@@ -1,6 +1,6 @@
 ---
 - name: Configure Apache HTTPD Log Rotation on Amazon Linux
-  hosts: web_servers
+  hosts: all
   become: yes
   vars:
     apache_log_path: "/var/log/httpd/*.log"
