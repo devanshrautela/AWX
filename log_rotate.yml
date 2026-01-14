@@ -1,0 +1,45 @@
+---
+- name: Configure Apache HTTPD Log Rotation on Amazon Linux
+  hosts: web_servers
+  become: yes
+  vars:
+    apache_log_path: "/var/log/httpd/*.log"
+    keep_logs: 14
+    rotation_size: "100M"
+
+  tasks:
+    - name: Ensure logrotate is installed
+      dnf:
+        name: logrotate
+        state: present
+
+    - name: Deploy HTTPD logrotate configuration
+      blockinfile:
+        path: /etc/logrotate.d/httpd
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+        block: |
+          {{ apache_log_path }} {
+              daily
+              missingok
+              rotate {{ keep_logs }}
+              size {{ rotation_size }}
+              compress
+              delaycompress
+              notifempty
+              sharedscripts
+              postrotate
+                  /usr/sbin/httpd -k graceful > /dev/null 2>/dev/null || true
+              endscript
+          }
+
+    - name: Test logrotate configuration syntax
+      command: logrotate -d /etc/logrotate.d/httpd
+      register: logrotate_test
+      changed_when: false
+
+    - name: Show debug info for logrotate test
+      debug:
+        var: logrotate_test.stderr_lines
